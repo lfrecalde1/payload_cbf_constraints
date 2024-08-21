@@ -354,7 +354,7 @@ class CameraNode(Node):
         x_error = x_cd - x_c
 
         # Null space projection
-        W = np.diag([100, 100, 100, 1, 1, 1])
+        W = np.diag([1, 1, 1, 1, 1, 1])
         I = np.diag([1, 1, 1, 1, 1, 1])
 
         # Desired Velocities Null space
@@ -412,12 +412,9 @@ class CameraNode(Node):
 
         # Velocity Object
         v_w = np.zeros((3, self.t.shape[0]), dtype=np.double)
-        v_w[0, :] = 0.1*np.sin(self.t)
-        v_w[1, :] = 0.1*np.cos(self.t)
+        v_w[0, :] = 1*np.sin(self.t)
+        v_w[1, :] = 1*np.cos(self.t)
         v_w[2, :] = 0*np.cos(self.t)
-
-        # Vector of the errors
-        x_error = np.zeros((3, self.t.shape[0] - self.N_prediction), dtype=np.double)
 
         # Empty vector current values b frame
         x_b_data = np.zeros((3, self.t.shape[0] - self.N_prediction), dtype=np.double)
