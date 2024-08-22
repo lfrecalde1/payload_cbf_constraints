@@ -64,8 +64,8 @@ class CameraNode(Node):
         self.N_prediction = self.N.shape[0]
 
         # Initial States dual set zeros
-        pos_0 = np.array([2.2, 1.2, 2], dtype=np.double)
-        theta_0 = np.pi/4
+        pos_0 = np.array([1.9, 1.2, 2], dtype=np.double)
+        theta_0 = 0.0
         n_0 = np.array([0.0, 0.0, 1.0])
         quat_0 = np.hstack([np.cos(theta_0 / 2), np.sin(theta_0 / 2) * np.array(n_0)])
         #quat_0 = np.array([1.0, 0.0, 0.0, 0.0])
@@ -325,7 +325,7 @@ class CameraNode(Node):
 
         return Z_smooth_norm
 
-    def exp_function(self, x_cd, x_max, y_max):
+    def exp_function(self, x_cd, x_max, y_max, n, kx, ky, kz, r_max_x, r_max_y, r_max_z):
         # Desired Point camera frame
         x_c = x_cd[0]
         y_c = x_cd[1]
@@ -339,20 +339,49 @@ class CameraNode(Node):
 
         # Define the parameters of the smooth exponential function
         A = 1.0  # Amplitude
-        r_max_1 = 1  # Maximum radius for the smooth transition
-        r_max_2 = 0.70  # Maximum radius for the smooth transition
-        k = 4  # Sharpness of the transition
 
         # Calculate the distance from the center using the L2 norm (Euclidean distance)
-        R1 = np.sqrt((X - x_c)**8)
-        R2 = np.sqrt((Y - y_c)**8)
+        R1 = (X - x_c)**n
+        R2 = (Y - y_c)**n
         
-        R1_norm = np.sqrt((X - x_c)**2)
-        R2_norm = np.sqrt((Y - y_c)**2)
-
         # Define the smooth exponential function using the L2 norm
-        Z_smooth = 1 - A * np.exp(-((R1 / r_max_1**k) + (R2 / r_max_2**k)))
+        Z_smooth = 1 - A * np.exp(-((R1 / r_max_x**kx) + (R2 / r_max_y**ky)))
         return Z_smooth
+
+    def exp(self, x_c, x_cd, n, kx, ky, kz, r_max_x, r_max_y, r_max_z):
+        # Desired Point camera frame
+        x_0 = x_cd[0]
+        y_0 = x_cd[1]
+
+        R1 = (x_c[0] - x_0)**n
+        R2 = (x_c[1] - y_0)**n
+
+        A = 1.0  # Amplitude
+
+        value = A * np.exp(-((R1 / r_max_x**kx) + (R2 / r_max_y**ky)))
+        return  value
+
+    def v_function(self, x_c, x_cd, n, kx, ky, kz, r_max_x, r_max_y, r_max_z):
+        # Desired Point camera frame
+        value = 1 - self.exp(x_c, x_cd, n, kx, ky, kz, r_max_x, r_max_y, r_max_z)
+        return  value
+
+    def exp_jacobian(self, x_c, x_cd, n, kx, ky, kz, r_max_x, r_max_y, r_max_z):
+        # Desired Point camera frame
+        x_0 = x_cd[0]
+        y_0 = x_cd[1]
+        z_0 = x_cd[2]
+
+        a = ((x_c[0] - x_0)**(n-1))/r_max_x**kx
+        b = ((x_c[1] - y_0)**(n-1))/r_max_y**ky
+        c = ((x_c[2] - z_0)**(n-1))/r_max_z**kz
+
+        factor_exp = self.exp(x_c, x_cd, n, kx, ky, kz, r_max_x, r_max_y, r_max_z)
+        aux = factor_exp*n
+
+        Jaux = np.array([[a, b, c]])
+        J = aux*Jaux
+        return  J
 
     def control_law_camera_frame(self, X_b, X_c, X, x_c, x_cd, x_dot_w):
         # Compute quaternion and translations of the final frame
@@ -404,7 +433,7 @@ class CameraNode(Node):
 
         # Null space projection
         #W = np.diag([1, 1, 1, 1, 1, 1])
-        W = np.diag([100, 100, 1, 1, 1, 1])
+        W = np.diag([300, 300, 1, 1, 1, 1])
         I = np.diag([1, 1, 1, 1, 1, 1])
 
         # Desired Velocities Null space
@@ -419,6 +448,80 @@ class CameraNode(Node):
         # Control Law
         u = J_inverse@(K@x_error - J3@x_dot_w) + (I + J_inverse@J)@v_d
         #u = np.linalg.pinv(J)@(x_error)
+        return u
+
+    def control_law_camera_frame_exp(self, X_b, X_c, X, x_c, x_cd, x_dot_w, n, kx, ky, kz, r_max_x, r_max_y, r_max_z):
+        # Compute quaternion and translations of the final frame
+        c = np.array(get_quat(X)).reshape((4, ))
+        H_plus_c = self.H_plus(c)
+        H_minus_c = self.H_minus(c)
+
+        # Compute orientation and translation body frame respect to the world frame
+        t_b = np.array(get_trans(X_b)).reshape((4, ))
+        position_b = np.array([0.0, t_b[1], t_b[2], t_b[3]]).reshape((4, ))
+
+        # Compute quaternion and translations of the camera respect to body
+        t_bc = np.array(get_trans(X_c)).reshape((4, ))
+        position_bc = np.array([0.0, t_bc[1], t_bc[2], t_bc[3]]).reshape((4, ))
+        q_bc = np.array(get_quat(X_c)).reshape((4, ))
+
+        H_plus_q_bc = self.H_plus(q_bc)
+        H_minus_q_bc = self.H_minus(q_bc)
+
+        # Point respect to the camera frame  value from  the sensor
+        position_c = np.array([0.0, x_c[0], x_c[1], x_c[2]]).reshape((4, ))
+
+
+        # Jacobian elements
+        a = H_plus_q_bc@position_c + H_minus_q_bc@position_bc
+        b = H_minus_q_bc.T@position_c + H_plus_q_bc.T@position_bc
+
+        H_plus_a = self.H_plus(a)
+        H_minus_a = self.H_minus(a)
+
+        H_plus_b = self.H_plus(b)
+        H_minus_b = self.H_minus(b)
+
+        # Compute Jacobians
+        T = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        T2 = np.array([[0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]])
+        
+        # Jacobian first part
+        J1 = (1/2)*(H_plus_b@H_minus_q_bc - H_plus_q_bc.T@H_minus_a)@T
+        J2 = -H_plus_c.T@H_minus_c@T
+        J3 = T2@H_plus_c.T@H_minus_c@T
+        J = np.hstack((J1, J2))
+
+        # Reduce Dimensions
+        J = T2@J
+
+        # Error Control
+        v_error = 0.0 - self.v_function(x_c, x_cd, n, kx, ky, kz, r_max_x, r_max_y, r_max_z)
+        v_error = np.array([v_error])
+        J_exp = self.exp_jacobian(x_c, x_cd, n, kx, ky, kz, r_max_x, r_max_y, r_max_z)
+
+        J = J_exp@J
+        J3 = J_exp@J3
+
+
+        # Null space projection
+        #W = np.diag([1, 1, 1, 1, 1, 1])
+        W = np.diag([300, 300, 1, 1, 1, 1])
+        I = np.diag([1, 1, 1, 1, 1, 1])
+
+        # Desired Velocities Null space
+        v_d_i = np.array([0.0, 0.0, 0.0])
+        w_d_b = np.array([0.0, 0.0, 0.0])
+        # General Vector velocities
+        v_d = np.hstack((v_d_i, w_d_b))
+
+        J_inverse = np.linalg.inv(W)@J.T@np.linalg.inv(J@np.linalg.inv(W)@J.T)
+        K = 50
+
+        # Control Law
+        #u = J_inverse@(K@x_error - J3@x_dot_w) + (I + J_inverse@J)@v_d
+        u = J_inverse@(K*v_error- J3@x_dot_w) + (I + J_inverse@J)@v_d
+        #u = np.linalg.pinv(J)@(v_error)
         return u
 
     def control_law(self, x_bd, x_b, X, x_dot_w):
@@ -463,8 +566,8 @@ class CameraNode(Node):
 
         # Velocity Object
         v_w = np.zeros((3, self.t.shape[0]), dtype=np.double)
-        #v_w[0, :] = 2*np.sin(self.t)
-        #v_w[1, :] = 2*np.cos(self.t)
+        #v_w[0, :] = 1*np.sin(self.t)
+        #v_w[1, :] = 1*np.cos(self.t)
         #v_w[2, :] = 0*np.cos(self.t)
 
         # Empty vector current values b frame
@@ -478,15 +581,22 @@ class CameraNode(Node):
         x_bd[2, :] = -0.2
 
         x_cd = np.zeros((3, self.t.shape[0] - self.N_prediction), dtype=np.double)
-        x_cd[0, :] = 0.2
-        x_cd[1, :] = -0.2
+        x_cd[0, :] = 0.0
+        x_cd[1, :] = 0.0
         x_cd[2, :] = 0.5
 
         # Map L2 Norm
         x_max = 1.5
         y_max = 1.0
+        n = 2
+        kx = 4
+        ky = 4
+        kz = 4
+        r_max_x = 1.0  # Maximum radius for the smooth transition
+        r_max_y = 0.8  # Maximum radius for the smooth transition
+        r_max_z = 0.1  # Maximum radius for the smooth transition
         Z_smooth_norm = self.l2_norm(x_cd[:, 0], x_max, y_max)
-        Z_smooth_exp = self.exp_function(x_cd[:, 0], x_max, y_max)
+        Z_smooth_exp = self.exp_function(x_cd[:, 0], x_max, y_max, n, kx, ky, kz, r_max_x, r_max_y, r_max_z)
 
         ## Simulation loop
         for k in range(0, self.t.shape[0]- self.N_prediction):
@@ -494,7 +604,6 @@ class CameraNode(Node):
             tic = time.time()
             # Update point for the projection
             self.update_point(self.x_w[:, k])
-
             # Point Projected to the body frame using tf in the background and manual computation
             x_b = self.transform_point('body')
             x_b_aux = self.transform_point_manual(self.X[:, k])
@@ -514,12 +623,11 @@ class CameraNode(Node):
             x_c_data[:, k] = x_c_aux
 
             # Print values
-            print(x_c)
             print(x_c_aux)
-            print(x_c_aux_2)
 
             # Control Lawcamera frame
-            self.u[:, k] = self.control_law_camera_frame(self.X[:, k], self.camera_pose, self.forward_camera, x_c_aux, x_cd[:, k], v_w[:, k])
+            #self.u[:, k] = self.control_law_camera_frame(self.X[:, k], self.camera_pose, self.forward_camera, x_c_aux, x_cd[:, k], v_w[:, k])
+            self.u[:, k] = self.control_law_camera_frame_exp(self.X[:, k], self.camera_pose, self.forward_camera, x_c_aux, x_cd[:, k], v_w[:, k], n, kx, ky, kz, r_max_x, r_max_y, r_max_z)
 
             # Publish TF information body, camera and usign dualquaternion
             self.tranform_data("world", "body", self.X[:, k])
