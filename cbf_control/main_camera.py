@@ -364,9 +364,10 @@ class CameraNode(Node):
         v_d = np.hstack((v_d_i, w_d_b))
 
         J_inverse = np.linalg.inv(W)@J.T@np.linalg.inv(J@np.linalg.inv(W)@J.T)
+        K = np.diag([2, 2, 1])
 
         # Control Law
-        u = J_inverse@(x_error - J3@x_dot_w) + (I + J_inverse@J)@v_d
+        u = J_inverse@(K@x_error - J3@x_dot_w) + (I + J_inverse@J)@v_d
         #u = np.linalg.pinv(J)@(x_error)
         return u
 

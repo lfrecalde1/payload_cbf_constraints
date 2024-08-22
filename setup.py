@@ -18,7 +18,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            "camera_system = cbf_control.main_camera:main"
+            "camera_system = cbf_control.main_camera:main",
+            "cbf = cbf_control.cbf_functions:main"
+            
         ],
     },
 )
