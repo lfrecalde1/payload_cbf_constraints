@@ -33,7 +33,7 @@ d_1 = ca.vertcat(dw_1, dx_1, dy_1, dz_1)
 aux_2_1 = -np.pi/2
 n_2_1 = ca.MX([0.0, 0.0, 1.0])
 q_2_1 = ca.vertcat(ca.cos(aux_2_1/2), ca.sin(aux_2_1/2)@n_2_1)
-t_2_1 = ca.MX([0.0, 0.0, 0.0, -0.5])
+t_2_1 = ca.MX([0.0, 0.0, 0.0, -0.2])
 
 aux_2_2 = -np.pi
 n_2_2 = ca.MX([1.0, 0.0, 0.0])

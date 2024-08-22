@@ -19,7 +19,8 @@ setup(
     entry_points={
         'console_scripts': [
             "camera_system = cbf_control.main_camera:main",
-            "cbf = cbf_control.cbf_functions:main"
+            "cbf = cbf_control.cbf_functions:main",
+            "cbf_camera = cbf_control.cbf_camera_frame:main",
             
         ],
     },

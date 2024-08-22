@@ -64,7 +64,7 @@ class CameraNode(Node):
         self.N_prediction = self.N.shape[0]
 
         # Initial States dual set zeros
-        pos_0 = np.array([2.0, 1.0, 2], dtype=np.double)
+        pos_0 = np.array([2.2, 1.2, 2], dtype=np.double)
         theta_0 = np.pi/4
         n_0 = np.array([0.0, 0.0, 1.0])
         quat_0 = np.hstack([np.cos(theta_0 / 2), np.sin(theta_0 / 2) * np.array(n_0)])
@@ -305,6 +305,55 @@ class CameraNode(Node):
         x_c = H_plus_c.T@H_minus_c@(x_w - position_b) - H_plus_q_bc.T@H_minus_q_bc@position_bc
         return x_c[1:4]
 
+    def l2_norm(self, x_cd, x_max, y_max):
+        # Desired Point camera frame
+        x_c = x_cd[0]
+        y_c = x_cd[1]
+
+        number_points = 200
+
+        # Create a grid of x, y values
+        x = np.linspace(-x_max, x_max, number_points)
+        y = np.linspace(-y_max, y_max, number_points)
+        X, Y = np.meshgrid(x, y)
+
+        R1_norm = np.sqrt((X - x_c)**2)
+        R2_norm = np.sqrt((Y - y_c)**2)
+
+        # Define the smooth exponential function using the L2 norm
+        Z_smooth_norm = R1_norm + R2_norm
+
+        return Z_smooth_norm
+
+    def exp_function(self, x_cd, x_max, y_max):
+        # Desired Point camera frame
+        x_c = x_cd[0]
+        y_c = x_cd[1]
+
+        number_points = 200
+
+        # Create a grid of x, y values
+        x = np.linspace(-x_max, x_max, number_points)
+        y = np.linspace(-y_max, y_max, number_points)
+        X, Y = np.meshgrid(x, y)
+
+        # Define the parameters of the smooth exponential function
+        A = 1.0  # Amplitude
+        r_max_1 = 1  # Maximum radius for the smooth transition
+        r_max_2 = 0.70  # Maximum radius for the smooth transition
+        k = 4  # Sharpness of the transition
+
+        # Calculate the distance from the center using the L2 norm (Euclidean distance)
+        R1 = np.sqrt((X - x_c)**8)
+        R2 = np.sqrt((Y - y_c)**8)
+        
+        R1_norm = np.sqrt((X - x_c)**2)
+        R2_norm = np.sqrt((Y - y_c)**2)
+
+        # Define the smooth exponential function using the L2 norm
+        Z_smooth = 1 - A * np.exp(-((R1 / r_max_1**k) + (R2 / r_max_2**k)))
+        return Z_smooth
+
     def control_law_camera_frame(self, X_b, X_c, X, x_c, x_cd, x_dot_w):
         # Compute quaternion and translations of the final frame
         c = np.array(get_quat(X)).reshape((4, ))
@@ -354,7 +403,8 @@ class CameraNode(Node):
         x_error = x_cd - x_c
 
         # Null space projection
-        W = np.diag([1, 1, 1, 1, 1, 1])
+        #W = np.diag([1, 1, 1, 1, 1, 1])
+        W = np.diag([100, 100, 1, 1, 1, 1])
         I = np.diag([1, 1, 1, 1, 1, 1])
 
         # Desired Velocities Null space
@@ -364,7 +414,7 @@ class CameraNode(Node):
         v_d = np.hstack((v_d_i, w_d_b))
 
         J_inverse = np.linalg.inv(W)@J.T@np.linalg.inv(J@np.linalg.inv(W)@J.T)
-        K = np.diag([2, 2, 1])
+        K = 0.5*np.diag([1, 1, 1])
 
         # Control Law
         u = J_inverse@(K@x_error - J3@x_dot_w) + (I + J_inverse@J)@v_d
@@ -413,9 +463,9 @@ class CameraNode(Node):
 
         # Velocity Object
         v_w = np.zeros((3, self.t.shape[0]), dtype=np.double)
-        v_w[0, :] = 1*np.sin(self.t)
-        v_w[1, :] = 1*np.cos(self.t)
-        v_w[2, :] = 0*np.cos(self.t)
+        #v_w[0, :] = 2*np.sin(self.t)
+        #v_w[1, :] = 2*np.cos(self.t)
+        #v_w[2, :] = 0*np.cos(self.t)
 
         # Empty vector current values b frame
         x_b_data = np.zeros((3, self.t.shape[0] - self.N_prediction), dtype=np.double)
@@ -428,10 +478,17 @@ class CameraNode(Node):
         x_bd[2, :] = -0.2
 
         x_cd = np.zeros((3, self.t.shape[0] - self.N_prediction), dtype=np.double)
-        x_cd[0, :] = 0.0
-        x_cd[1, :] = 0.0
-        x_cd[2, :] = 0.2
+        x_cd[0, :] = 0.2
+        x_cd[1, :] = -0.2
+        x_cd[2, :] = 0.5
 
+        # Map L2 Norm
+        x_max = 1.5
+        y_max = 1.0
+        Z_smooth_norm = self.l2_norm(x_cd[:, 0], x_max, y_max)
+        Z_smooth_exp = self.exp_function(x_cd[:, 0], x_max, y_max)
+
+        ## Simulation loop
         for k in range(0, self.t.shape[0]- self.N_prediction):
             # Get model
             tic = time.time()
@@ -461,7 +518,7 @@ class CameraNode(Node):
             print(x_c_aux)
             print(x_c_aux_2)
 
-            # Control Law body frame
+            # Control Lawcamera frame
             self.u[:, k] = self.control_law_camera_frame(self.X[:, k], self.camera_pose, self.forward_camera, x_c_aux, x_cd[:, k], v_w[:, k])
 
             # Publish TF information body, camera and usign dualquaternion
@@ -495,6 +552,26 @@ class CameraNode(Node):
         
         fig31, ax31, ax32, ax33 = fancy_plots_3()
         plot_angular_velocities(fig31, ax31, ax32, ax33, self.u[0:3, :], self.t, "Angular Velocity Body Frame "+ str(self.initial), self.path_image_file)
+        plt.show()
+
+        plt.figure(figsize=(12, 6))
+        plt.subplot(1, 2, 1)
+        plt.imshow(Z_smooth_norm, extent=[-x_max, x_max, -y_max, y_max], origin='lower', cmap='viridis')
+        plt.colorbar(label='f(x, y)')
+        plt.title('L2 Norm')
+        plt.xlabel('X')
+        plt.ylabel('Y')
+        plt.plot(x_c_data[0, :], x_c_data[1, :], 'rx', markersize=1)  # Red point
+
+        plt.subplot(1, 2, 2)
+        plt.imshow(Z_smooth_exp, extent=[-x_max, x_max, -y_max, y_max], origin='lower', cmap='viridis')
+        plt.colorbar(label='f(x, y)')
+        plt.title('Exp function')
+        plt.xlabel('X')
+        plt.ylabel('Y')
+        plt.plot(x_c_data[0, :], x_c_data[1, :], 'rx', markersize=1)  # Red point
+
+        plt.tight_layout()
         plt.show()
 
 def main(args=None):
