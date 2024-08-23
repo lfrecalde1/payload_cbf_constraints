@@ -55,7 +55,7 @@ class CameraNode(Node):
 
         # Lets define internal variables
         self.ts = 0.01
-        self.t_final = 20
+        self.t_final = 40
         self.t = np.arange(0, self.t_final + self.ts, self.ts, dtype=np.double)
 
         ## Prediction time 
@@ -64,7 +64,7 @@ class CameraNode(Node):
         self.N_prediction = self.N.shape[0]
 
         # Initial States dual set zeros
-        pos_0 = np.array([1.9, 1.2, 2], dtype=np.double)
+        pos_0 = np.array([1.4, 0.3, 2], dtype=np.double)
         theta_0 = 0.0
         n_0 = np.array([0.0, 0.0, 1.0])
         quat_0 = np.hstack([np.cos(theta_0 / 2), np.sin(theta_0 / 2) * np.array(n_0)])
@@ -352,12 +352,15 @@ class CameraNode(Node):
         # Desired Point camera frame
         x_0 = x_cd[0]
         y_0 = x_cd[1]
+        z_0 = x_cd[2]
 
         R1 = (x_c[0] - x_0)**n
         R2 = (x_c[1] - y_0)**n
+        R3 = (x_c[2] - z_0)**n
 
         A = 1.0  # Amplitude
 
+        #value = A * np.exp(-((R1 / r_max_x**kx) + (R2 / r_max_y**ky) + (R3 / r_max_z**kz)))
         value = A * np.exp(-((R1 / r_max_x**kx) + (R2 / r_max_y**ky)))
         return  value
 
@@ -379,7 +382,8 @@ class CameraNode(Node):
         factor_exp = self.exp(x_c, x_cd, n, kx, ky, kz, r_max_x, r_max_y, r_max_z)
         aux = factor_exp*n
 
-        Jaux = np.array([[a, b, c]])
+        #Jaux = np.array([[a, b, c]])
+        Jaux = np.array([[a, b]])
         J = aux*Jaux
         return  J
 
@@ -447,6 +451,7 @@ class CameraNode(Node):
 
         # Control Law
         u = J_inverse@(K@x_error - J3@x_dot_w) + (I + J_inverse@J)@v_d
+        #u = J_inverse@(K@x_error) + (I + J_inverse@J)@v_d
         #u = np.linalg.pinv(J)@(x_error)
         return u
 
@@ -500,12 +505,12 @@ class CameraNode(Node):
         v_error = np.array([v_error])
         J_exp = self.exp_jacobian(x_c, x_cd, n, kx, ky, kz, r_max_x, r_max_y, r_max_z)
 
-        J = J_exp@J
-        J3 = J_exp@J3
+        J = J_exp@J[0:2, :]
+        J3 = J_exp@J3[0:2, :]
 
 
         # Null space projection
-        #W = np.diag([1, 1, 1, 1, 1, 1])
+        W = np.diag([1, 1, 1, 1, 1, 1])
         W = np.diag([300, 300, 1, 1, 1, 1])
         I = np.diag([1, 1, 1, 1, 1, 1])
 
@@ -516,11 +521,12 @@ class CameraNode(Node):
         v_d = np.hstack((v_d_i, w_d_b))
 
         J_inverse = np.linalg.inv(W)@J.T@np.linalg.inv(J@np.linalg.inv(W)@J.T)
-        K = 50
+        K = 5
 
         # Control Law
         #u = J_inverse@(K@x_error - J3@x_dot_w) + (I + J_inverse@J)@v_d
         u = J_inverse@(K*v_error- J3@x_dot_w) + (I + J_inverse@J)@v_d
+        #u = J_inverse@(K*v_error) + (I + J_inverse@J)@v_d
         #u = np.linalg.pinv(J)@(v_error)
         return u
 
@@ -566,9 +572,9 @@ class CameraNode(Node):
 
         # Velocity Object
         v_w = np.zeros((3, self.t.shape[0]), dtype=np.double)
-        #v_w[0, :] = 1*np.sin(self.t)
-        #v_w[1, :] = 1*np.cos(self.t)
-        #v_w[2, :] = 0*np.cos(self.t)
+        v_w[0, :] = 0.5*np.sin(self.t)
+        v_w[1, :] = 0.5*np.cos(self.t)
+        v_w[2, :] = 0*np.cos(self.t)
 
         # Empty vector current values b frame
         x_b_data = np.zeros((3, self.t.shape[0] - self.N_prediction), dtype=np.double)
@@ -588,13 +594,13 @@ class CameraNode(Node):
         # Map L2 Norm
         x_max = 1.5
         y_max = 1.0
-        n = 2
+        n = 10
         kx = 4
         ky = 4
         kz = 4
-        r_max_x = 1.0  # Maximum radius for the smooth transition
-        r_max_y = 0.8  # Maximum radius for the smooth transition
-        r_max_z = 0.1  # Maximum radius for the smooth transition
+        r_max_x = 1.5  # Maximum radius for the smooth transition
+        r_max_y = 0.6  # Maximum radius for the smooth transition
+        r_max_z = 2  # Maximum radius for the smooth transition
         Z_smooth_norm = self.l2_norm(x_cd[:, 0], x_max, y_max)
         Z_smooth_exp = self.exp_function(x_cd[:, 0], x_max, y_max, n, kx, ky, kz, r_max_x, r_max_y, r_max_z)
 
