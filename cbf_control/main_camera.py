@@ -64,7 +64,7 @@ class CameraNode(Node):
         self.N_prediction = self.N.shape[0]
 
         # Initial States dual set zeros
-        pos_0 = np.array([1.4, 0.3, 2], dtype=np.double)
+        pos_0 = np.array([0.0, 0.0, 0.0], dtype=np.double)
         theta_0 = 0.0
         n_0 = np.array([0.0, 0.0, 1.0])
         quat_0 = np.hstack([np.cos(theta_0 / 2), np.sin(theta_0 / 2) * np.array(n_0)])
@@ -104,7 +104,7 @@ class CameraNode(Node):
         self.point_in_w.header.frame_id = 'world'
         self.point_in_w.header.stamp = self.get_clock().now().to_msg()
         self.point_in_w.point.x = 1.0
-        self.point_in_w.point.y = 1.0
+        self.point_in_w.point.y = 0.0
         self.point_in_w.point.z = 0.0
 
         self.x_w = np.zeros((3, self.t.shape[0] + 1 - self.N_prediction), dtype=np.double)
@@ -447,7 +447,7 @@ class CameraNode(Node):
         v_d = np.hstack((v_d_i, w_d_b))
 
         J_inverse = np.linalg.inv(W)@J.T@np.linalg.inv(J@np.linalg.inv(W)@J.T)
-        K = 0.5*np.diag([1, 1, 1])
+        K = 1*np.diag([1, 1, 1])
 
         # Control Law
         u = J_inverse@(K@x_error - J3@x_dot_w) + (I + J_inverse@J)@v_d
@@ -572,9 +572,9 @@ class CameraNode(Node):
 
         # Velocity Object
         v_w = np.zeros((3, self.t.shape[0]), dtype=np.double)
-        v_w[0, :] = 0.5*np.sin(self.t)
-        v_w[1, :] = 0.5*np.cos(self.t)
-        v_w[2, :] = 0*np.cos(self.t)
+        v_w[0, :] = 0.0*np.sin(self.t)
+        v_w[1, :] = 0.1*np.cos(self.t)
+        #v_w[2, :] = 0*np.cos(self.t)
 
         # Empty vector current values b frame
         x_b_data = np.zeros((3, self.t.shape[0] - self.N_prediction), dtype=np.double)
@@ -629,11 +629,15 @@ class CameraNode(Node):
             x_c_data[:, k] = x_c_aux
 
             # Print values
-            print(x_c_aux)
+            #print(x_c_aux)
+            t_camera_body = get_trans(self.camera_pose)
+            q_camera_body = get_quat(self.camera_pose)
+            print(t_camera_body)
+            print(q_camera_body)
 
             # Control Lawcamera frame
-            #self.u[:, k] = self.control_law_camera_frame(self.X[:, k], self.camera_pose, self.forward_camera, x_c_aux, x_cd[:, k], v_w[:, k])
-            self.u[:, k] = self.control_law_camera_frame_exp(self.X[:, k], self.camera_pose, self.forward_camera, x_c_aux, x_cd[:, k], v_w[:, k], n, kx, ky, kz, r_max_x, r_max_y, r_max_z)
+            self.u[:, k] = self.control_law_camera_frame(self.X[:, k], self.camera_pose, self.forward_camera, x_c_aux, x_cd[:, k], v_w[:, k])
+            #self.u[:, k] = self.control_law_camera_frame_exp(self.X[:, k], self.camera_pose, self.forward_camera, x_c_aux, x_cd[:, k], v_w[:, k], n, kx, ky, kz, r_max_x, r_max_y, r_max_z)
 
             # Publish TF information body, camera and usign dualquaternion
             self.tranform_data("world", "body", self.X[:, k])
@@ -656,37 +660,37 @@ class CameraNode(Node):
             toc = time.time() - tic
             self.get_logger().info("Camera Projections")
         
-        fig11, ax11, ax12, ax13 = fancy_plots_3()
-        plot_states_position_b_frame(fig11, ax11, ax12, ax13, x_c_data[0:3, :], x_cd[0:3, :], self.t, "Position Results Body Frame Point "+ str(self.initial), self.path_image_file)
-        plt.show()
+        #fig11, ax11, ax12, ax13 = fancy_plots_3()
+        #plot_states_position_b_frame(fig11, ax11, ax12, ax13, x_c_data[0:3, :], x_cd[0:3, :], self.t, "Position Results Body Frame Point "+ str(self.initial), self.path_image_file)
+        #plt.show()
 
-        fig21, ax21, ax22, ax23 = fancy_plots_3()
-        plot_linear_velocities(fig21, ax21, ax22, ax23, self.u[3:6, :], self.t, "Linear Velocity Inertial Frame "+ str(self.initial), self.path_image_file)
-        plt.show()
-        
-        fig31, ax31, ax32, ax33 = fancy_plots_3()
-        plot_angular_velocities(fig31, ax31, ax32, ax33, self.u[0:3, :], self.t, "Angular Velocity Body Frame "+ str(self.initial), self.path_image_file)
-        plt.show()
+        #fig21, ax21, ax22, ax23 = fancy_plots_3()
+        #plot_linear_velocities(fig21, ax21, ax22, ax23, self.u[3:6, :], self.t, "Linear Velocity Inertial Frame "+ str(self.initial), self.path_image_file)
+        #plt.show()
+        #
+        #fig31, ax31, ax32, ax33 = fancy_plots_3()
+        #plot_angular_velocities(fig31, ax31, ax32, ax33, self.u[0:3, :], self.t, "Angular Velocity Body Frame "+ str(self.initial), self.path_image_file)
+        #plt.show()
 
-        plt.figure(figsize=(12, 6))
-        plt.subplot(1, 2, 1)
-        plt.imshow(Z_smooth_norm, extent=[-x_max, x_max, -y_max, y_max], origin='lower', cmap='viridis')
-        plt.colorbar(label='f(x, y)')
-        plt.title('L2 Norm')
-        plt.xlabel('X')
-        plt.ylabel('Y')
-        plt.plot(x_c_data[0, :], x_c_data[1, :], 'rx', markersize=1)  # Red point
+        #plt.figure(figsize=(12, 6))
+        #plt.subplot(1, 2, 1)
+        #plt.imshow(Z_smooth_norm, extent=[-x_max, x_max, -y_max, y_max], origin='lower', cmap='viridis')
+        #plt.colorbar(label='f(x, y)')
+        #plt.title('L2 Norm')
+        #plt.xlabel('X')
+        #plt.ylabel('Y')
+        #plt.plot(x_c_data[0, :], x_c_data[1, :], 'rx', markersize=1)  # Red point
 
-        plt.subplot(1, 2, 2)
-        plt.imshow(Z_smooth_exp, extent=[-x_max, x_max, -y_max, y_max], origin='lower', cmap='viridis')
-        plt.colorbar(label='f(x, y)')
-        plt.title('Exp function')
-        plt.xlabel('X')
-        plt.ylabel('Y')
-        plt.plot(x_c_data[0, :], x_c_data[1, :], 'rx', markersize=1)  # Red point
+        #plt.subplot(1, 2, 2)
+        #plt.imshow(Z_smooth_exp, extent=[-x_max, x_max, -y_max, y_max], origin='lower', cmap='viridis')
+        #plt.colorbar(label='f(x, y)')
+        #plt.title('Exp function')
+        #plt.xlabel('X')
+        #plt.ylabel('Y')
+        #plt.plot(x_c_data[0, :], x_c_data[1, :], 'rx', markersize=1)  # Red point
 
-        plt.tight_layout()
-        plt.show()
+        #plt.tight_layout()
+        #plt.show()
 
 def main(args=None):
     rclpy.init(args=args)
